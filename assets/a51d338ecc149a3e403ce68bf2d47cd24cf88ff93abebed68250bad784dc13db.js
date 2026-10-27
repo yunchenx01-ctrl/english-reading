@@ -6,17 +6,31 @@ function recordingQueue(material,words,index=null){
   return {clips:available.map((w,i)=>({file:w.audio,gap:i===available.length-1?0:material.between_gap})),missing:selected.length-available.length};
 }
 class RecordingPlayer{
-  constructor(env,notify,mediaBase='/uploads/'){this.mediaBase=mediaBase;this.env=env;this.notify=notify;this.state='idle';this.generation=0;this.timer=null;this.audio=null;}
-  stop(announce=true){this.generation++;this.env.clearTimeout(this.timer);this.timer=null;if(this.audio){this.audio.onended=null;this.audio.onerror=null;this.audio.pause();this.audio.currentTime=0;}this.audio=null;this.state='idle';if(announce)this.notify('已停止','idle');}
+  constructor(env,notify,mediaBase='/uploads/'){this.mediaBase=mediaBase;this.env=env;this.notify=notify;this.state='idle';this.generation=0;this.clipGeneration=0;this.timer=null;this.audio=null;}
+  stop(announce=true){this.generation++;this.clipGeneration++;this.env.clearTimeout(this.timer);this.timer=null;if(this.audio){this.audio.onended=null;this.audio.onerror=null;this.audio.pause();this.audio.currentTime=0;}this.state='idle';if(announce)this.notify('已停止','idle');}
   start(clips){this.stop(false);this.clips=clips;this.index=0;if(!clips.length){this.notify('老師尚未上傳錄音，請稍後再來喔！','idle');return;}this.state='playing';this.next();}
   next(){
     if(this.index>=this.clips.length){this.stop(false);this.notify('播放完成','idle');return;}
-    this.phase='audio';const audio=this.env.audio(this.mediaBase ? this.mediaBase+encodeURIComponent(this.clips[this.index].file) : this.clips[this.index].file);this.audio=audio;
-    audio.onended=()=>{if(this.audio!==audio||this.state!=='playing')return;this.phase='gap';this.wait(this.clips[this.index].gap*1000);};
-    audio.onerror=()=>{if(this.audio===audio)this.fail();};this.playCurrent();
+    this.phase='audio';
+    const src=this.mediaBase ? this.mediaBase+encodeURIComponent(this.clips[this.index].file) : this.clips[this.index].file;
+    // Keep the element unlocked by the student's first tap across the playlist.
+    const audio=this.audio||(this.audio=this.env.audio(src));
+    audio.onended=null;audio.onerror=null;audio.src=src;
+    const clip=++this.clipGeneration;
+    audio.onended=()=>{if(clip!==this.clipGeneration||this.state!=='playing'||this.phase!=='audio')return;this.phase='gap';this.wait(this.clips[this.index].gap*1000);};
+    audio.onerror=()=>{if(clip===this.clipGeneration)this.fail();};this.playCurrent();
   }
   fail(){this.stop(false);this.notify('錄音無法播放，請重試，或請教師改用 MP3／WAV 音檔。','idle');}
-  playCurrent(){const generation=++this.generation;this.notify('播放中','playing');try{Promise.resolve(this.audio.play()).catch(()=>{if(generation===this.generation)this.fail();});}catch(e){this.fail();}}
+  playCurrent(){
+    const generation=++this.generation;this.notify('播放中','playing');
+    const rejected=error=>{
+      if(generation!==this.generation)return;
+      if(error?.name==='NotAllowedError'){
+        this.state='paused';this.notify('瀏覽器暫時阻擋自動播放，請按「繼續」播放目前單字。','paused');
+      }else this.fail();
+    };
+    try{Promise.resolve(this.audio.play()).catch(rejected);}catch(error){rejected(error);}
+  }
   wait(ms){this.remaining=ms;this.deadline=this.env.now()+ms;this.timer=this.env.setTimeout(()=>{this.timer=null;if(this.state==='playing'){this.index++;this.next();}},ms);}
   pause(){if(this.state!=='playing')return;this.state='paused';this.generation++;if(this.phase==='gap'){this.remaining=Math.max(0,this.deadline-this.env.now());this.env.clearTimeout(this.timer);this.timer=null;}else this.audio.pause();this.notify('已暫停','paused');}
   resume(){if(this.state!=='paused')return;this.state='playing';if(this.phase==='gap'){this.notify('播放中','playing');this.wait(this.remaining);}else this.playCurrent();}
