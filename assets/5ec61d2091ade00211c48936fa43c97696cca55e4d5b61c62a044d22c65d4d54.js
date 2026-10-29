@@ -1,7 +1,7 @@
 'use strict';
 function recordingQueue(material,words,index=null){
-  if(material.kind!=='vocabulary')return {clips:material.audio?[{file:material.audio,gap:0}]:[],missing:0};
-  const selected=index===null?words:[words[index]];
+  const legacy=material.kind==='preview'&&material.audio?{audio:material.audio}:null;
+  const selected=index===null?(legacy?[legacy,...words]:words):(index===-1?[legacy]:[words[index]]);
   const available=selected.filter(w=>w&&w.audio);
   return {clips:available.map((w,i)=>({file:w.audio,gap:i===available.length-1?0:material.between_gap})),missing:selected.length-available.length};
 }
@@ -46,7 +46,7 @@ if(typeof document!=='undefined'){
   const dataNode=document.querySelector('#lesson-data');
   if(dataNode&&document.querySelector('#play')){
     const data=JSON.parse(dataNode.dataset.payload);let selected=null,missing=0;
-    const notify=(text,state)=>{document.querySelector('#status').textContent=text+(missing?'（略過 '+missing+' 個尚未錄音的單字）':'');document.querySelector('#pause').disabled=state!=='playing';document.querySelector('#resume').disabled=state!=='paused';};
+    const notify=(text,state)=>{document.querySelector('#status').textContent=text+(missing?'（略過 '+missing+' 個尚未錄音的項目）':'');document.querySelector('#pause').disabled=state!=='playing';document.querySelector('#resume').disabled=state!=='paused';};
     const player=new RecordingPlayer({audio:src=>new Audio(src),setTimeout:(fn,ms)=>window.setTimeout(fn,ms),clearTimeout:id=>window.clearTimeout(id),now:()=>performance.now()},notify,data.mediaBase ?? '/uploads/');
     function play(index=null){selected=index;const q=recordingQueue(data.material,data.words,index);missing=q.missing;player.start(q.clips);}
     document.querySelector('#play').onclick=()=>play();document.querySelectorAll('.word-play').forEach(b=>b.onclick=()=>play(Number(b.dataset.index)));
